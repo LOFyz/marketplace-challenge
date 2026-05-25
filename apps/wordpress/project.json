@@ -1,0 +1,8 @@
+{
+  "name": "wordpress",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "apps/wordpress",
+  "tags": ["type:app", "scope:catalog"],
+  "targets": {}
+}

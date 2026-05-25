@@ -1,0 +1,40 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compileOnSave": false,
+  "files": [],
+  "references": [
+    {
+      "path": "./apps/gateway"
+    },
+    {
+      "path": "./libs/shared-domain"
+    },
+    {
+      "path": "./libs/graphql-contracts"
+    },
+    {
+      "path": "./apps/users-suppliers"
+    },
+    {
+      "path": "./apps/orders-cart"
+    },
+    {
+      "path": "./apps/payment-processor"
+    },
+    {
+      "path": "./apps/stock-worker"
+    },
+    {
+      "path": "./apps/better-auth"
+    },
+    {
+      "path": "./apps/mcp-server"
+    },
+    {
+      "path": "./libs/shared-otel"
+    },
+    {
+      "path": "./libs/shared-auth"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+export const ProductGraphQL = `
+type Product @key(fields: "id") {
+  id: ID!
+  name: String!
+  price: Float!
+}
+`;
