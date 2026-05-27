@@ -4,11 +4,17 @@
 # `pnpm nx serve <app>` (Nx local cache mounted at .nx/cache). Production multi-stage
 # images live with the SST/deploy change. WordPress + RabbitMQ + Postgres + MySQL +
 # OTel Collector + Jaeger back the stack. All app services emit OTLP to the collector.
+#
+# Dependencies are installed ONCE by the `install` one-shot into the shared
+# `node_modules` volume; every Node service waits for it (so they never race to
+# `pnpm install` into the same volume) and then just runs `corepack enable && nx …`.
 name: marketplace-challenge
 
 # Shared template for the Nx Node/Nest services.
 x-node-app: &node-app
-  image: node:20-bookworm-slim
+  # Node 22+ is required: corepack's pnpm 11 imports `node:sqlite`, absent before
+  # Node 22.5. (package.json pins pnpm@11.4.0 so every container uses the same one.)
+  image: node:22-bookworm-slim
   working_dir: /workspace
   entrypoint: ['sh', '-c']
   volumes:
@@ -18,22 +24,53 @@ x-node-app: &node-app
   networks:
     - marketplace
 
+# Every Node service waits for the one-shot install to finish.
+x-needs-install: &needs-install
+  install:
+    condition: service_completed_successfully
+
 x-otel-env: &otel-env
   OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
   OTEL_EXPORTER_OTLP_PROTOCOL: grpc
 
+# Single shared Postgres DB (escopo: users/orders), discrete vars for MikroORM.
+x-db-env: &db-env
+  DB_HOST: postgres
+  DB_PORT: '5432'
+  DB_NAME: marketplace
+  DB_USER: marketplace
+  DB_PASSWORD: marketplace
+
 services:
+  # ---- One-shot dependency install (populates the shared node_modules volume) -
+  # NOTE: command is a single-element list. With `entrypoint: ['sh','-c']`, a
+  # plain string command gets tokenized by Compose, so only `corepack` would run
+  # ("Corepack <command>" help + exit). The list keeps the whole `&&` chain as
+  # one argument to `sh -c`.
+  install:
+    <<: *node-app
+    command: ['corepack enable && pnpm install --frozen-lockfile']
+    restart: 'no'
+
   # ---- Gateway -------------------------------------------------------------
   gateway:
     <<: *node-app
-    command: 'corepack enable && pnpm install --frozen-lockfile && pnpm nx serve gateway'
+    command: ['corepack enable && pnpm nx serve gateway']
     environment:
       <<: *otel-env
       OTEL_SERVICE_NAME: gateway
+      SUBGRAPH_USERS_URL: http://users-suppliers:3000/graphql
+      SUBGRAPH_ORDERS_URL: http://orders-cart:3000/graphql
+      AUTH_JWKS_URL: http://better-auth:3000/auth/jwks
+      AUTH_ISSUER: http://localhost:3003/auth
+      AUTH_AUDIENCE: marketplace
     ports:
       - '3000:3000'
     depends_on:
+      <<: *needs-install
       otel-collector:
+        condition: service_started
+      better-auth:
         condition: service_started
       users-suppliers:
         condition: service_started
@@ -49,46 +86,65 @@ services:
   # ---- Federated subgraphs -------------------------------------------------
   users-suppliers:
     <<: *node-app
-    command: 'corepack enable && pnpm install --frozen-lockfile && pnpm nx serve users-suppliers'
+    command: ['corepack enable && pnpm nx serve users-suppliers']
     environment:
-      <<: *otel-env
+      <<: [*otel-env, *db-env]
       OTEL_SERVICE_NAME: users-suppliers
-      DATABASE_URL: postgres://marketplace:marketplace@postgres:5432/users
     ports:
       - '3001:3000'
     depends_on:
+      <<: *needs-install
       postgres:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
       otel-collector:
         condition: service_started
+    healthcheck:
+      # POST (not GET): Apollo Server v4 blocks GET to /graphql via CSRF prevention.
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:3000/graphql',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({query:'{__typename}'})}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
 
   orders-cart:
     <<: *node-app
-    command: 'corepack enable && pnpm install --frozen-lockfile && pnpm nx serve orders-cart'
+    command: ['corepack enable && pnpm nx serve orders-cart']
     environment:
-      <<: *otel-env
+      <<: [*otel-env, *db-env]
       OTEL_SERVICE_NAME: orders-cart
-      DATABASE_URL: postgres://marketplace:marketplace@postgres:5432/orders
       RABBITMQ_URL: amqp://marketplace:marketplace@rabbitmq:5672
     ports:
       - '3002:3000'
     depends_on:
+      <<: *needs-install
       postgres:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       otel-collector:
         condition: service_started
+    healthcheck:
+      # POST (not GET): Apollo Server v4 blocks GET to /graphql via CSRF prevention.
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:3000/graphql',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({query:'{__typename}'})}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
 
   # ---- Saga workers (RabbitMQ microservices, no HTTP) ----------------------
   payment-processor:
     <<: *node-app
-    command: 'corepack enable && pnpm install --frozen-lockfile && pnpm nx serve payment-processor'
+    command: ['corepack enable && pnpm nx serve payment-processor']
     environment:
       <<: *otel-env
       OTEL_SERVICE_NAME: payment-processor
       RABBITMQ_URL: amqp://marketplace:marketplace@rabbitmq:5672
     depends_on:
+      <<: *needs-install
       rabbitmq:
         condition: service_healthy
       otel-collector:
@@ -96,12 +152,13 @@ services:
 
   stock-worker:
     <<: *node-app
-    command: 'corepack enable && pnpm install --frozen-lockfile && pnpm nx serve stock-worker'
+    command: ['corepack enable && pnpm nx serve stock-worker']
     environment:
       <<: *otel-env
       OTEL_SERVICE_NAME: stock-worker
       RABBITMQ_URL: amqp://marketplace:marketplace@rabbitmq:5672
     depends_on:
+      <<: *needs-install
       rabbitmq:
         condition: service_healthy
       otel-collector:
@@ -110,22 +167,40 @@ services:
   # ---- Auth + MCP ----------------------------------------------------------
   better-auth:
     <<: *node-app
-    command: 'corepack enable && pnpm install --frozen-lockfile && pnpm nx serve better-auth'
+    command: ['corepack enable && pnpm nx serve better-auth']
     environment:
-      <<: *otel-env
+      <<: [*otel-env, *db-env]
       OTEL_SERVICE_NAME: better-auth
-      DATABASE_URL: postgres://marketplace:marketplace@postgres:5432/auth
+      # Listen on the in-container 3000 like every other app (the app defaults to
+      # 3003 for standalone host dev); the host mapping below exposes it as :3003,
+      # and the gateway reaches JWKS at http://better-auth:3000/auth/jwks.
+      PORT: '3000'
+      BETTER_AUTH_SECRET: dev-secret-change-me
+      BETTER_AUTH_URL: http://localhost:3003
+      BETTER_AUTH_BASE_PATH: /auth
+      BETTER_AUTH_ISSUER: http://localhost:3003/auth
+      BETTER_AUTH_AUDIENCE: marketplace
+      BETTER_AUTH_TRUSTED_ORIGINS: http://localhost:3000,http://localhost:3003
     ports:
       - '3003:3000'
     depends_on:
+      <<: *needs-install
       postgres:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
       otel-collector:
         condition: service_started
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
 
   mcp-server:
     <<: *node-app
-    command: 'corepack enable && pnpm install --frozen-lockfile && pnpm nx serve mcp-server'
+    command: ['corepack enable && pnpm nx serve mcp-server']
     environment:
       <<: *otel-env
       OTEL_SERVICE_NAME: mcp-server
@@ -133,10 +208,23 @@ services:
     ports:
       - '3004:3000'
     depends_on:
+      <<: *needs-install
       gateway:
         condition: service_started
       otel-collector:
         condition: service_started
+
+  # ---- One-shot DB migrator (marketplace + Better Auth tables, seed clients) -
+  migrator:
+    <<: *node-app
+    command: ['corepack enable && pnpm nx run migrator:build && node apps/migrator/dist/main.js']
+    environment:
+      <<: *db-env
+    restart: 'no'
+    depends_on:
+      <<: *needs-install
+      postgres:
+        condition: service_healthy
 
   # ---- Catalog: WordPress + WooCommerce + WPGraphQL -------------------------
   wordpress:

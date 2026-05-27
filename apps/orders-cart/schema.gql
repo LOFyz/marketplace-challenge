@@ -1,0 +1,30 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+type CartItem {
+  id: ID!
+  productId: ID!
+  quantity: Int!
+}
+
+type Cart {
+  id: ID!
+  userId: ID!
+  items: [CartItem!]!
+}
+
+type Order {
+  id: ID!
+  status: String!
+  total: Int!
+}
+
+type Query {
+  myCart: Cart
+}
+
+type Mutation {
+  addToCart(productId: String!, quantity: Int!): Cart!
+  removeFromCart(productId: String!): Cart!
+}

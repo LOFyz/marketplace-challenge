@@ -53,6 +53,9 @@
     }
   ],
   "analytics": false,
+  "sync": {
+    "applyChanges": true
+  },
   "tui": {
     "enabled": false
   }

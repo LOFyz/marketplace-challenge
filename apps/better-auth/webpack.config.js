@@ -9,10 +9,15 @@ module.exports = {
       devtoolModuleFilenameTemplate: '[absolute-resource-path]',
     }),
   },
+  // Resolve workspace libs (@org/*) to their TS source via the `@org/source`
+  // export condition, so ts-loader compiles source instead of the libs' dist.
+  resolve: {
+    conditionNames: ['@org/source', '...'],
+  },
   plugins: [
     new NxAppWebpackPlugin({
       target: 'node',
-      compiler: 'tsc',
+      compiler: 'swc',
       main: './src/main.ts',
       tsConfig: './tsconfig.app.json',
       assets: ['./src/assets'],

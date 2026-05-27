@@ -55,8 +55,8 @@ docker-compose.yml    # Stack de desenvolvimento local
 
 ## Pré-requisitos
 
-- Node.js 20+
-- pnpm 10+ (`corepack enable`)
+- Node.js 22+ (o pnpm 11 usa `node:sqlite`, ausente antes do 22.5)
+- pnpm 11 via `corepack enable` (fixado em `pnpm@11.4.0` no `package.json`)
 - Docker + Docker Compose
 
 ## Rodando localmente
@@ -68,6 +68,9 @@ pnpm install
 # subir toda a stack (apps + WordPress + RabbitMQ + Postgres + MySQL + OTel + Jaeger)
 docker compose up
 ```
+
+> No VS Code, **F5** ("Run full stack (docker compose up)") sobe a mesma stack. As
+> demais configs de debug anexam o depurador a **um** serviço enquanto o resto roda.
 
 | Serviço            | URL / Porta                         |
 |--------------------|-------------------------------------|
@@ -91,3 +94,40 @@ pnpm nx serve gateway               # rodar um serviço em modo dev
 
 > Cache do Nx é **local** (Nx Cloud não é usado). O CI (`.github/workflows/ci.yml`) roda
 > `typecheck`, `lint`, `test` e `build` via pnpm.
+
+## Supergraph federado + Autenticação (OAuth2)
+
+O **gateway** (`apps/gateway`) compõe o supergraph a partir dos subgraphs NestJS
+`users-suppliers` e `orders-cart` (Apollo Federation v2, `IntrospectAndCompose`).
+Operações expostas: `me`, `myCart` (queries) e `createSupplier`, `addToCart`,
+`removeFromCart` (mutations).
+
+A autenticação é OAuth2 via **Better Auth** (`apps/better-auth`): tokens **JWT RS256**,
+JWKS em `/auth/jwks`, descoberta em `/.well-known/openid-configuration`, com Authorization
+Code + PKCE e scopes (`cart:read`, `cart:write`, `orders:read`, `mcp:read`). O gateway
+valida o Bearer JWT (via `libs/shared-auth` + JWKS) e propaga o contexto autenticado
+(`x-user-id`, `x-supplier-id`, `x-roles`, `traceparent`) para os subgraphs.
+
+```bash
+# Caminho rápido (sessão → JWT), útil para testar o supergraph:
+#   1. criar usuário (define o cookie de sessão)
+curl -s -c cookies.txt -X POST http://localhost:3003/auth/sign-up/email \
+  -H 'content-type: application/json' \
+  -d '{"name":"Dev","email":"dev@example.com","password":"password12345"}'
+#   2. emitir um JWT RS256 para a sessão (plugin jwt do Better Auth)
+TOKEN=$(curl -s -b cookies.txt http://localhost:3003/auth/token | jq -r .token)
+#   3. consultar o supergraph autenticado (sem token → 401):
+curl -X POST http://localhost:3000/graphql \
+  -H "authorization: Bearer $TOKEN" \
+  -H 'content-type: application/json' \
+  -d '{"query":"{ me { id email ownedSuppliers { id legalName } } myCart { id items { productId quantity } } }"}'
+```
+
+> Para o fluxo OAuth2 completo (Authorization Code + PKCE), use o cliente `marketplace-web`
+> já registrado; os endpoints estão em `/.well-known/openid-configuration` (:3003).
+
+> **Migrações:** o serviço `migrator` (um disparo) prepara todo o banco em `docker compose up`:
+> tabelas do marketplace (supplier, cart, …) via MikroORM, as tabelas do Better Auth
+> (user, session, jwks, oauth_*) e o seed dos clientes OAuth2 de desenvolvimento
+> (`marketplace-web` público/PKCE e `marketplace-mcp` confidencial). Tudo idempotente.
+> **Produtos** são referenciados por `productId` (escalar) até o WooCommerce ser federado.

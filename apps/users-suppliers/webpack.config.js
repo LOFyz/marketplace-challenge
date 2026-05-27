@@ -2,6 +2,7 @@ const { NxAppWebpackPlugin } = require('@nx/webpack/app-plugin');
 const { join } = require('path');
 
 module.exports = {
+  resolve: { conditionNames: ['@org/source', '...'] },
   output: {
     path: join(__dirname, 'dist'),
     clean: true,
@@ -12,7 +13,7 @@ module.exports = {
   plugins: [
     new NxAppWebpackPlugin({
       target: 'node',
-      compiler: 'tsc',
+      compiler: 'swc',
       main: './src/main.ts',
       tsConfig: './tsconfig.app.json',
       assets: ['./src/assets'],

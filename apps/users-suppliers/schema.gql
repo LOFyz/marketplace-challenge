@@ -1,0 +1,25 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+type Supplier {
+  id: ID!
+  legalName: String!
+  taxId: String!
+  owner: User!
+}
+
+type User {
+  id: ID!
+  email: String
+  name: String
+  ownedSuppliers: [Supplier!]!
+}
+
+type Query {
+  me: User
+}
+
+type Mutation {
+  createSupplier(legalName: String!, taxId: String!): Supplier!
+}

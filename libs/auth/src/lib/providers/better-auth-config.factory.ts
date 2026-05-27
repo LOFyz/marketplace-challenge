@@ -1,0 +1,29 @@
+import type { FactoryProvider } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import type { BetterAuthConfig } from '../init-auth.js';
+import { BETTER_AUTH_CONFIG_TOKEN } from './better-auth.factory.js';
+
+export const BetterAuthConfigFactory = {
+  provide: BETTER_AUTH_CONFIG_TOKEN,
+  useFactory(config: ConfigService): BetterAuthConfig {
+    const secret = config.get<string>('BETTER_AUTH_SECRET');
+    if (!secret) throw new Error('BETTER_AUTH_SECRET is required');
+    const baseUrl = config.get<string>('BETTER_AUTH_URL') ?? 'http://localhost:3003';
+    const trustedOrigins = (config.get<string>('BETTER_AUTH_TRUSTED_ORIGINS') ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return {
+      secret,
+      baseUrl,
+      basePath: config.get<string>('BETTER_AUTH_BASE_PATH') ?? '/auth',
+      trustedOrigins,
+      googleClientId: config.get<string>('GOOGLE_CLIENT_ID'),
+      googleClientSecret: config.get<string>('GOOGLE_CLIENT_SECRET'),
+      issuer: config.get<string>('BETTER_AUTH_ISSUER') ?? baseUrl,
+      audience: config.get<string>('BETTER_AUTH_AUDIENCE') ?? 'marketplace',
+      loginPage: config.get<string>('BETTER_AUTH_LOGIN_PAGE') ?? '/login',
+    };
+  },
+  inject: [ConfigService],
+} satisfies FactoryProvider;

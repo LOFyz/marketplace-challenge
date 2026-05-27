@@ -35,6 +35,33 @@
     },
     {
       "path": "./libs/shared-auth"
+    },
+    {
+      "path": "./libs/db"
+    },
+    {
+      "path": "./libs/auth"
+    },
+    {
+      "path": "./libs/users/domain"
+    },
+    {
+      "path": "./libs/users/application"
+    },
+    {
+      "path": "./libs/users/infrastructure"
+    },
+    {
+      "path": "./libs/orders/domain"
+    },
+    {
+      "path": "./libs/orders/application"
+    },
+    {
+      "path": "./libs/orders/infrastructure"
+    },
+    {
+      "path": "./apps/migrator"
     }
   ]
 }

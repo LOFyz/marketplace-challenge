@@ -2,6 +2,20 @@
   "version": "0.2.0",
   "configurations": [
     {
+      // Default F5: bring up the whole local stack (Postgres + one-shot migrator
+      // + all apps) via Docker Compose. This is the real run path — the gateway
+      // needs the subgraphs/DB/better-auth up to compose the supergraph, which a
+      // single `nx serve` can't provide. Stop with the Debug toolbar (sends an
+      // interrupt to `docker compose up`). The per-service "Debug … with Nx"
+      // configs below are for attaching a Node debugger to ONE service while the
+      // rest of the stack runs (here under Docker).
+      "type": "node-terminal",
+      "request": "launch",
+      "name": "Run full stack (docker compose up)",
+      "command": "docker compose up",
+      "cwd": "${workspaceFolder}"
+    },
+    {
       "type": "node",
       "request": "launch",
       "name": "Debug gateway with Nx",
@@ -124,6 +138,24 @@
       "sourceMaps": true,
       "outFiles": [
         "${workspaceFolder}/apps/mcp-server/dist/**/*.(m|c|)js",
+        "!**/node_modules/**"
+      ]
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug migrator with Nx",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["exec", "nx", "serve", "migrator"],
+      "env": {
+        "NODE_OPTIONS": "--inspect=9236"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": ["<node_internals>/**"],
+      "sourceMaps": true,
+      "outFiles": [
+        "${workspaceFolder}/apps/migrator/dist/**/*.(m|c|)js",
         "!**/node_modules/**"
       ]
     }
