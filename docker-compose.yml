@@ -21,6 +21,15 @@ x-node-app: &node-app
     - .:/workspace
     - node_modules:/workspace/node_modules
     - nx-cache:/workspace/.nx/cache
+  # Each container gets its OWN ephemeral Nx coordination dir. Without this, all
+  # node services share the bind-mounted .nx/workspace-data, and Nx's task-run
+  # locks (machine-v2.db) collide across containers: after a restart a service
+  # waits forever for "<project>:serve:development in another nx process" — a
+  # dead PID from the previous run in a sibling container. A tmpfs is wiped on
+  # every container start, so each boot has clean, isolated coordination state.
+  # (Build cache stays shared via the nx-cache volume above.)
+  tmpfs:
+    - /workspace/.nx/workspace-data
   networks:
     - marketplace
 
@@ -70,12 +79,15 @@ services:
       <<: *needs-install
       otel-collector:
         condition: service_started
+      # Wait until the subgraphs are actually serving GraphQL, not merely
+      # started: the gateway composes the supergraph once at boot via
+      # IntrospectAndCompose and exits(1) if a subgraph isn't reachable yet.
       better-auth:
-        condition: service_started
+        condition: service_healthy
       users-suppliers:
-        condition: service_started
+        condition: service_healthy
       orders-cart:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       test: ['CMD', 'node', '-e', "fetch('http://localhost:3000/graphql').then(()=>process.exit(0)).catch(()=>process.exit(1))"]
       interval: 15s
