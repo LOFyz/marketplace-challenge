@@ -6,18 +6,23 @@ type Supplier {
   id: ID!
   legalName: String!
   taxId: String!
-  owner: User!
+  owner: AppUser!
 }
 
-type User {
+type AppUser {
   id: ID!
   email: String
   name: String
   ownedSuppliers: [Supplier!]!
 }
 
+type SimpleProduct {
+  databaseId: Int!
+  supplier: Supplier
+}
+
 type Query {
-  me: User
+  me: AppUser
 }
 
 type Mutation {

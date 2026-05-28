@@ -37,6 +37,14 @@ interface GatewayContext {
                 process.env['SUBGRAPH_ORDERS_URL'] ??
                 'http://localhost:3002/graphql',
             },
+            {
+              // WordPress + WooCommerce, federated via wp-graphql-federations.
+              // Origin of the `SimpleProduct` entity (@key: databaseId).
+              name: 'catalog',
+              url:
+                process.env['SUBGRAPH_CATALOG_URL'] ??
+                'http://localhost:8080/graphql',
+            },
           ],
         }),
         // Propagate the validated auth context + trace to every subgraph (§4.1).

@@ -70,6 +70,7 @@ services:
       OTEL_SERVICE_NAME: gateway
       SUBGRAPH_USERS_URL: http://users-suppliers:3000/graphql
       SUBGRAPH_ORDERS_URL: http://orders-cart:3000/graphql
+      SUBGRAPH_CATALOG_URL: http://wordpress/graphql
       AUTH_JWKS_URL: http://better-auth:3000/auth/jwks
       AUTH_ISSUER: http://localhost:3003/auth
       AUTH_AUDIENCE: marketplace
@@ -87,6 +88,9 @@ services:
       users-suppliers:
         condition: service_healthy
       orders-cart:
+        condition: service_healthy
+      # WordPress catalog must be federation-ready before the gateway composes.
+      wordpress:
         condition: service_healthy
     healthcheck:
       test: ['CMD', 'node', '-e', "fetch('http://localhost:3000/graphql').then(()=>process.exit(0)).catch(()=>process.exit(1))"]
@@ -238,7 +242,32 @@ services:
       postgres:
         condition: service_healthy
 
-  # ---- Catalog: WordPress + WooCommerce + WPGraphQL -------------------------
+  # ---- One-shot catalog seed: link the sample WooCommerce product to a demo --
+  # supplier. Runs the migrator binary in 'catalog-seed' mode AFTER WordPress is
+  # federation-ready (it resolves the product databaseId from WPGraphQL by SKU).
+  catalog-seed:
+    <<: *node-app
+    command: ['corepack enable && pnpm nx run migrator:build && node apps/migrator/dist/main.js']
+    environment:
+      <<: *db-env
+      MIGRATOR_MODE: catalog-seed
+      CATALOG_GRAPHQL_URL: http://wordpress/graphql
+      CATALOG_SAMPLE_SKU: MKT-WIDGET-001
+    restart: 'no'
+    depends_on:
+      <<: *needs-install
+      postgres:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+      wordpress:
+        condition: service_healthy
+
+  # ---- Catalog: WordPress + WooCommerce + WPGraphQL (federated subgraph) -----
+  # The entrypoint installs WPGraphQL + WooCommerce + WooGraphQL + the
+  # wp-graphql-federations plugin and seeds the federation config so the concrete
+  # `SimpleProduct` is exposed as a @key(fields:"databaseId") entity. The gateway
+  # composes this as a third subgraph at http://wordpress/graphql.
   wordpress:
     build:
       context: ./apps/wordpress
@@ -248,6 +277,7 @@ services:
       WORDPRESS_DB_USER: wordpress
       WORDPRESS_DB_PASSWORD: wordpress
       WORDPRESS_DB_NAME: wordpress
+      WP_SITE_URL: http://localhost:8080
     ports:
       - '8080:80'
     networks:
@@ -255,6 +285,24 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+    volumes:
+      # Named volume (not the implicit anonymous one declared by the wordpress image),
+      # so plugin installs persist across restarts AND we can wipe it explicitly when
+      # bumping the WP core version (the stock entrypoint only copies core to an EMPTY
+      # /var/www/html). To reset: `docker compose down -v` or
+      # `docker volume rm marketplace-challenge_wp_data`.
+      - wp_data:/var/www/html
+    healthcheck:
+      # Federation-ready: pass only once `_service { sdl }` composes and exposes
+      # the SimpleProduct entity (not merely once Apache answers). The gateway
+      # waits on this so IntrospectAndCompose never hits a half-provisioned WP.
+      test:
+        - 'CMD-SHELL'
+        - "curl -s http://localhost/graphql -H 'content-type: application/json' -d '{\"query\":\"{ _service { sdl } }\"}' | grep -q 'type SimpleProduct'"
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 240s
 
   # ---- Backing services ----------------------------------------------------
   rabbitmq:
@@ -342,3 +390,4 @@ volumes:
   nx-cache:
   pgdata:
   mysqldata:
+  wp_data:

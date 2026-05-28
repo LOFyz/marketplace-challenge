@@ -6,6 +6,7 @@ import { DbModule, createMikroOrmOptions } from '@org/db';
 import {
   SupplierEntitySchema,
   SupplierMembershipEntitySchema,
+  SupplierProductOwnershipEntitySchema,
 } from '@org/users-infrastructure';
 import { OrdersEntities } from '@org/orders-infrastructure';
 
@@ -14,6 +15,7 @@ import { OrdersEntities } from '@org/orders-infrastructure';
 const MarketplaceEntities = [
   SupplierEntitySchema,
   SupplierMembershipEntitySchema,
+  SupplierProductOwnershipEntitySchema,
   ...OrdersEntities,
 ];
 

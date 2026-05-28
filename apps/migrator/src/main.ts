@@ -2,20 +2,39 @@ import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { MikroORM } from '@mikro-orm/core';
+import type { EntityManager } from '@mikro-orm/postgresql';
 import { AppModule } from './app/app.module.js';
 import {
   ensureBetterAuthSchema,
   seedDevOAuthClients,
 } from './app/better-auth-schema.js';
+import { seedCatalogOwnership } from './app/catalog-seed.js';
 
-// One-shot migrator: brings the whole DB up to date, then exits.
-// 1) marketplace tables (MikroORM schema diff over the entities),
-// 2) Better Auth tables (its own snake_case schema — see better-auth-schema.ts),
-// 3) dev OAuth2 clients (escopo §3.6 / §7) — idempotent seed.
+// One-shot migrator. Two modes (selected by MIGRATOR_MODE):
+//  - 'migrate' (default): bring the whole DB up to date, then exit —
+//    1) marketplace tables (MikroORM schema diff), 2) Better Auth tables,
+//    3) dev OAuth2 clients (escopo §3.6 / §7).
+//  - 'catalog-seed': link the sample WooCommerce product to a demo supplier
+//    (runs after WordPress is federation-ready; resolves the product databaseId
+//    from WPGraphQL since the migrator can't know it ahead of time).
 async function bootstrap() {
+  const mode = process.env['MIGRATOR_MODE'] ?? 'migrate';
   const ctx = await NestFactory.createApplicationContext(AppModule, {
     logger: ['log', 'error', 'warn'],
   });
+  const config = ctx.get(ConfigService);
+
+  if (mode === 'catalog-seed') {
+    const em = (ctx.get(MikroORM).em as EntityManager).fork();
+    await seedCatalogOwnership(em, {
+      wpUrl: config.get<string>('CATALOG_GRAPHQL_URL') ?? 'http://wordpress/graphql',
+      sku: config.get<string>('CATALOG_SAMPLE_SKU') ?? 'MKT-WIDGET-001',
+    });
+    Logger.log('✅ Catalog ownership seeded', 'Migrator');
+    await ctx.close();
+    process.exit(0);
+  }
+
   const orm = ctx.get(MikroORM) as unknown as {
     schema: {
       ensureDatabase(): Promise<boolean>;
@@ -23,7 +42,6 @@ async function bootstrap() {
     };
     em: { getConnection(): { execute(sql: string, params?: readonly unknown[], method?: 'all' | 'get' | 'run'): Promise<unknown> } };
   };
-  const config = ctx.get(ConfigService);
 
   await orm.schema.ensureDatabase();
 

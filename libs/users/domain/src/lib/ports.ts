@@ -1,4 +1,10 @@
-import type { Supplier, SupplierMembership, SupplierRole, User } from './models.js';
+import type {
+  Supplier,
+  SupplierMembership,
+  SupplierProductOwnership,
+  SupplierRole,
+  User,
+} from './models.js';
 
 /** Read port for users (the user table is owned by Better Auth). */
 export interface UserRepository {
@@ -30,3 +36,18 @@ export interface MembershipRepository {
 }
 
 export const MEMBERSHIP_REPOSITORY = 'MEMBERSHIP_REPOSITORY';
+
+/** Repository port for supplier-product ownership (source of truth for O2). */
+export interface OwnershipRepository {
+  /** The ownership record for a product, or null if the product has no recorded owner. */
+  findByProductDatabaseId(
+    productDatabaseId: number,
+  ): Promise<SupplierProductOwnership | null>;
+  /** Idempotent upsert keyed on `productDatabaseId` (no duplicate owners). */
+  upsert(input: {
+    supplierId: string;
+    productDatabaseId: number;
+  }): Promise<SupplierProductOwnership>;
+}
+
+export const OWNERSHIP_REPOSITORY = 'OWNERSHIP_REPOSITORY';

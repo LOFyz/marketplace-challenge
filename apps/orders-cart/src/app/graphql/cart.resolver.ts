@@ -36,7 +36,10 @@ export class CartResolver {
     return this.toType(view);
   }
 
-  @Mutation(() => CartType)
+  // GraphQL field names are prefixed (`addToMarketplaceCart` / `removeFromMarketplaceCart`)
+  // so they don't collide with WooGraphQL's `addToCart`/`removeFromCart` mutations in
+  // the composed supergraph. Method names stay (escopo §6 vocabulary).
+  @Mutation(() => CartType, { name: 'addToMarketplaceCart' })
   async addToCart(
     @Args('productId') productId: string,
     @Args('quantity', { type: () => Int }) quantity: number,
@@ -49,7 +52,7 @@ export class CartResolver {
     return this.toType(view);
   }
 
-  @Mutation(() => CartType)
+  @Mutation(() => CartType, { name: 'removeFromMarketplaceCart' })
   async removeFromCart(
     @Args('productId') productId: string,
     @Context() ctx: SubgraphContext,

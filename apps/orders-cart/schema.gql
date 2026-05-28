@@ -2,29 +2,29 @@
 # THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
 # ------------------------------------------------------
 
-type CartItem {
+type MarketplaceCartItem {
   id: ID!
   productId: ID!
   quantity: Int!
 }
 
-type Cart {
+type MarketplaceCart {
   id: ID!
   userId: ID!
-  items: [CartItem!]!
+  items: [MarketplaceCartItem!]!
 }
 
-type Order {
+type MarketplaceOrder {
   id: ID!
   status: String!
   total: Int!
 }
 
 type Query {
-  myCart: Cart
+  myCart: MarketplaceCart
 }
 
 type Mutation {
-  addToCart(productId: String!, quantity: Int!): Cart!
-  removeFromCart(productId: String!): Cart!
+  addToMarketplaceCart(productId: String!, quantity: Int!): MarketplaceCart!
+  removeFromMarketplaceCart(productId: String!): MarketplaceCart!
 }

@@ -98,9 +98,9 @@ pnpm nx serve gateway               # rodar um serviço em modo dev
 ## Supergraph federado + Autenticação (OAuth2)
 
 O **gateway** (`apps/gateway`) compõe o supergraph a partir dos subgraphs NestJS
-`users-suppliers` e `orders-cart` (Apollo Federation v2, `IntrospectAndCompose`).
-Operações expostas: `me`, `myCart` (queries) e `createSupplier`, `addToCart`,
-`removeFromCart` (mutations).
+`users-suppliers` e `orders-cart` **e do catálogo WooCommerce** (`apps/wordpress`),
+todos via Apollo Federation v2 (`IntrospectAndCompose`). Operações expostas: `me`,
+`myCart`, `products` (queries) e `createSupplier`, `addToCart`, `removeFromCart` (mutations).
 
 A autenticação é OAuth2 via **Better Auth** (`apps/better-auth`): tokens **JWT RS256**,
 JWKS em `/auth/jwks`, descoberta em `/.well-known/openid-configuration`, com Authorization
@@ -127,7 +127,36 @@ curl -X POST http://localhost:3000/graphql \
 > já registrado; os endpoints estão em `/.well-known/openid-configuration` (:3003).
 
 > **Migrações:** o serviço `migrator` (um disparo) prepara todo o banco em `docker compose up`:
-> tabelas do marketplace (supplier, cart, …) via MikroORM, as tabelas do Better Auth
-> (user, session, jwks, oauth_*) e o seed dos clientes OAuth2 de desenvolvimento
-> (`marketplace-web` público/PKCE e `marketplace-mcp` confidencial). Tudo idempotente.
-> **Produtos** são referenciados por `productId` (escalar) até o WooCommerce ser federado.
+> tabelas do marketplace (supplier, cart, `supplier_product_ownership`, …) via MikroORM, as
+> tabelas do Better Auth (user, session, jwks, oauth_*) e o seed dos clientes OAuth2 de
+> desenvolvimento (`marketplace-web` público/PKCE e `marketplace-mcp` confidencial). Idempotente.
+
+## Catálogo WooCommerce federado
+
+O **WordPress** (`apps/wordpress`) participa do supergraph como subgraph **Federation v2**
+graças ao plugin **`wp-graphql-federations`** (provido pelo autor do desafio). O `entrypoint`
+provisiona tudo de forma reprodutível (sem cliques no wp-admin): instala/ativa WPGraphQL,
+WooCommerce e WooGraphQL (release `v1.0.2`), copia/ativa o plugin de federação e **seed da
+config** expondo o tipo concreto **`SimpleProduct`** como entidade `@key(fields: "databaseId")`.
+
+- **Identificador canônico de produto:** o `databaseId` (int) do WooCommerce — contrato
+  compartilhado entre o catálogo, `supplier_product_ownership` (em `users-suppliers`) e o carrinho.
+- **`users-suppliers`** estende `SimpleProduct` com `supplier: Supplier` (resolvido pela tabela
+  `supplier_product_ownership`, fonte da verdade de ownership — escopo O2).
+- **Seed de ownership:** o one-shot **`catalog-seed`** roda após o WordPress ficar saudável,
+  resolve o `databaseId` do produto de exemplo via WPGraphQL (por SKU) e vincula-o a um fornecedor
+  demo — idempotente.
+- ⚠️ **Federe apenas tipos concretos** (`SimpleProduct`, …): habilitar a **interface `Product`**
+  como entidade quebra o `_service{sdl}`/`_entities` do plugin. (Mutações de produto + enforcement
+  de ownership ficam para a mudança seguinte.)
+
+```bash
+# Produto federado + seu fornecedor, atravessando catalog → users-suppliers (autenticado):
+curl -X POST http://localhost:3000/graphql \
+  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"query":"{ products(first:5){ nodes { databaseId ... on SimpleProduct { name supplier { id legalName } } } } }"}'
+```
+
+| Serviço | Porta |
+|---|---|
+| Catálogo (WordPress/WPGraphQL) | http://localhost:8080/graphql |

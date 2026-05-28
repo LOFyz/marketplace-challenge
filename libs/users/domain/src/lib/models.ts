@@ -28,3 +28,14 @@ export interface SupplierMembership {
   role: SupplierRole;
   createdAt: Date;
 }
+
+/**
+ * Source of truth for product ownership (escopo §5.3, O2): links a `Supplier` to a
+ * WooCommerce product by its `databaseId` (the canonical product identifier). One owner
+ * per product — `productDatabaseId` is the key.
+ */
+export interface SupplierProductOwnership {
+  supplierId: string;
+  productDatabaseId: number;
+  createdAt: Date;
+}

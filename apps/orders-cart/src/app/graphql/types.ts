@@ -1,6 +1,8 @@
 import { Directive, Field, ID, Int, ObjectType } from '@nestjs/graphql';
 
-@ObjectType('CartItem')
+// Marketplace-prefixed GraphQL names so we don't collide with WooGraphQL's `Cart`,
+// `CartItem`, `Order` types in the supergraph (escopo §6.1 uses `MarketplaceOrder`).
+@ObjectType('MarketplaceCartItem')
 export class CartItemType {
   @Field(() => ID) id!: string;
   // Scalar reference to a WooCommerce product (no federated Product yet).
@@ -8,7 +10,7 @@ export class CartItemType {
   @Field(() => Int) quantity!: number;
 }
 
-@ObjectType('Cart')
+@ObjectType('MarketplaceCart')
 @Directive('@key(fields: "id")')
 export class CartType {
   @Field(() => ID) id!: string;
@@ -16,7 +18,7 @@ export class CartType {
   @Field(() => [CartItemType]) items!: CartItemType[];
 }
 
-@ObjectType('Order')
+@ObjectType('MarketplaceOrder')
 @Directive('@key(fields: "id")')
 export class OrderType {
   @Field(() => ID) id!: string;
